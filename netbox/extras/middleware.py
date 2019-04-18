@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.db.models.signals import post_delete, post_save
 from django.utils import timezone
-from django.utils.functional import curry
+from django.utils.functional import curry, SimpleLazyObject
 
 from extras.webhooks import enqueue_webhooks
 from .constants import (
@@ -29,15 +29,14 @@ def cache_changed_object(instance, **kwargs):
 
 def _record_object_deleted(request, instance, **kwargs):
 
-    # Force resolution of request.user in case it's still a SimpleLazyObject. This seems to happen
-    # occasionally during tests, but haven't been able to determine why.
-    assert request.user.is_authenticated
+    # Employ SimpleLazyObject to avoid resolving user until after DRF has performed its authentication.
+    user = SimpleLazyObject(lambda: request.user)
 
     # Record that the object was deleted
     if hasattr(instance, 'log_change'):
-        instance.log_change(request.user, request.id, OBJECTCHANGE_ACTION_DELETE)
+        instance.log_change(user, request.id, OBJECTCHANGE_ACTION_DELETE)
 
-    enqueue_webhooks(instance, request.user, request.id, OBJECTCHANGE_ACTION_DELETE)
+    enqueue_webhooks(instance, user, request.id, OBJECTCHANGE_ACTION_DELETE)
 
 
 class ObjectChangeMiddleware(object):
